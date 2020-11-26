@@ -1,0 +1,25 @@
+# Office Temp
+*.tmp
+## Word temporary
+~$*.doc*
+## Word Auto Backup File
+Backup of *.doc*
+## Excel temporary
+~$*.xls*
+## Excel Backup File
+*.xlk
+
+# data files
+*.feather
+*.csv
+*.csv.gz
+*.swp
+*.pdf
+.DS_Store
+
+# nextflow
+.nextflow*
+work/
+*.gtf
+*.db
+*.feather
