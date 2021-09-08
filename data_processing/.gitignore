@@ -1,0 +1,6 @@
+.nextflow*
+work/
+*.gtf
+*.db
+*.feather
+*.swp

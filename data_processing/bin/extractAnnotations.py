@@ -22,10 +22,16 @@ def gene_model(db, tx):
     else:
         childOrder = '-start'
 
-    if tx.attributes['transcript_type'][0] == 'protein_coding':
-        T = db.children(tx, order_by=childOrder, featuretype=['UTR','CDS','start_codon','stop_codon'])
-    else:
-        T = db.children(tx, order_by=childOrder, featuretype=['exon'])
+    if 'transcript_type' in tx.attributes:
+        if tx.attributes['transcript_type'][0] == 'protein_coding':
+            T = db.children(tx, order_by=childOrder, featuretype=['UTR','CDS','start_codon','stop_codon'])
+        else:
+            T = db.children(tx, order_by=childOrder, featuretype=['exon'])
+    elif 'transcript_biotype' in tx.attributes:
+        if tx.attributes['transcript_biotype'][0] == 'protein_coding':
+            T = db.children(tx, order_by=childOrder, featuretype=['UTR','CDS','start_codon','stop_codon'])
+        else:
+            T = db.children(tx, order_by=childOrder, featuretype=['exon'])
 
     current = 'utr5'
     seenCDS = False
@@ -90,9 +96,24 @@ G = gffutils.create_db(
 annot = []
 canonical = {}  # indexed by ENSG, points to annot row
 i = 0
+
 for l, feature in enumerate(G.features_of_type('transcript')):
     gene_id = feature.attributes['gene_id'][0]
-    gene_type = feature.attributes['gene_type'][0]
+    
+    if 'gene_type' in feature.attributes:
+        gene_type = feature.attributes['gene_type'][0]
+    elif 'gene_biotype' in feature.attributes:
+        gene_type = feature.attributes['gene_biotype'][0]
+    else:
+        gene_type = "undefined"
+    
+    if 'transcript_type' in feature.attributes:
+        transcript_type = feature.attributes['transcript_type'][0]
+    elif 'transcript_biotype' in feature.attributes:
+        transcript_type = feature.attributes['transcript_biotype'][0]
+    else:
+        transcript_type = "undefined"
+
 
     gene_info = gene_model(G,feature)
     model = gene_info['model']
@@ -121,8 +142,8 @@ for l, feature in enumerate(G.features_of_type('transcript')):
             {   'transcript_id': feature.attributes['transcript_id'][0],
                 'gene_id': feature.attributes['gene_id'][0],
                 'gene_name': feature.attributes['gene_name'][0],
-                'gene_type': feature.attributes['gene_type'][0],
-                'transcript_type': feature.attributes['transcript_type'][0],
+                'gene_type': gene_type, 
+                'transcript_type': transcript_type,
                 'chr': feature.seqid,
                 'strand': feature.strand,
                 'l_tr': sum(model.values()),

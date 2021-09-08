@@ -16,6 +16,7 @@ option_list = list(
                    make_option(c("-r", "--reads"), type = "character", default = NULL, help = "feather file containing read information dataframe", metavar="character"),
                    make_option(c("-a", "--annotations"), type = "character", default = NULL, help = "feather file containing annotation information", metavar="character"),
                    make_option(c("-p", "--prefix"), type = "character", default = NULL, help = "prefix for output filenames", metavar = "character"),
+                   make_option(c("--canonical"), action="store_true", default=FALSE, help = "keep reads in canonical set only"),
                    make_option(c("-w", "--whitelist"), type = "character", default = NULL, help = "whitelist for barcodes to create plate layout plots. Assumed to be in increasing well order A1-A24, B1-B24, etc.", metavar = "character") )
 
 opt_parser = OptionParser(option_list = option_list)
@@ -44,7 +45,7 @@ print(figurePrefix)
 if(grepl("feather",args$annotations)){
   annot <- read_feather(args$annotations)
 }else{
-  annot <- fread(args$annotations)
+  annot <- fread(args$annotations, stringsAsFactors = FALSE, data.table = FALSE)
 }
 
 if(grepl("feather",args$reads)){
@@ -66,10 +67,19 @@ if(!is.null(args$whitelist)){
   }
 }
 
-canonical_pc <- annot %>%
-  filter(set=="canonical", transcript_type == "protein_coding") %>%
-  filter(chr != "chrM") %>%
-  filter(transcript_id != "ENST00000437139.7")
+
+if(args$canonical){
+  canonical_pc <- annot %>%
+    filter(set == "canonical",
+           chr != "chrM",
+           transcript_type == "protein_coding",
+           transcript_id != "ENST00000437139.7")
+}else{
+  canonical_pc <- annot %>%
+    filter(chr != "chrM",
+           transcript_type == "protein_coding",
+           transcript_id != "ENST00000437139.7")
+}
 
 pc_reads <- canonical_pc %>%
   inner_join(reads, by = "transcript_id") %>%
@@ -274,7 +284,7 @@ if ("CB" %in% colnames(reads)){
   ## SC metaheatmaps
 
   sc_wiggle <- wiggleDF(pc_reads, group = "single", site = "cut5") %>%
-    filter(cell_total > 100)	
+    filter(cell_total > 100)  
 
   if(length(unique(sc_wiggle$set)) > 1){
     plt_sc_wiggle <- ggplot(sc_wiggle, aes(x=csd, y=CB, fill=(n/cell_total)))+

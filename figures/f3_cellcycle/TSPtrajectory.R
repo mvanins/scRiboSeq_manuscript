@@ -1,36 +1,3 @@
-#' R inplementation of wanderlust
-#'
-#' @param data Input data matrix.
-#' @param s Starting point ID.
-#' @param l l nearest neighbours.
-#' @param k k nearest neighbours, k < l.
-#' @param num_waypoints Number of waypoints to guide the trajectory detection.
-#' @param flock_waypoints The number of times for flocking the waypoints, default is 2.
-#' @param num_graphs Number of repreated graphs.
-#' @param waypoints_seed The seed for reproducing the results.
-#' @param metric Distance calculation metric for nearest neighbour detection.
-#' @param voting_scheme The scheme of voting.
-#' @param band_sample Boolean, if band the sample
-#' @param partial_order default NULL
-#' @param verbose Boolean, if print the details
-#'
-#' @return a list containing Trajectory, Order, Waypoints
-#' @author Hao Chen
-#' @importFrom RANN nn2
-#' @importFrom Matrix sparseMatrix
-#' @export
-#' @examples
-#' set.seed(15)
-#' shuffled_iris <- iris[sample(150, 150, replace = FALSE), ]
-#' data <- shuffled_iris[,1:4]
-#' data_label <- shuffled_iris[,5]
-#' wishbone <- Rwanderlust(data = data, num_waypoints = 100, waypoints_seed = 2)
-#' pd1 <- data.frame(id = wishbone$Trajectory, label=data_label, stringsAsFactors = FALSE)
-#' pd2 <- data.frame(id = seq_along(row.names(data)), label=data_label, stringsAsFactors = FALSE)
-#' #ggplot(pd1, aes(x=id, y=id, colour = label)) + geom_point() + theme_bw()
-#' #ggplot(pd2, aes(x=id, y=id, colour = label)) + geom_point() + theme_bw()
-
-
 #' downsample points to achieve similar spatial densities
 #'
 #' @param tbl data table

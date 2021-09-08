@@ -28,12 +28,12 @@ select_top_groups <- function(tbl, n, order_by, with_ties = TRUE){
   grps = tbl %>% groups %>% lapply(as.character) %>% unlist
 
   keep = tbl %>%
-    select(c(grps, {{ order_by }})) %>%
+    select(c(all_of(grps), {{ order_by }})) %>%
     distinct({{order_by}}) %>% 
     ungroup() %>%
     slice_max(order_by = {{order_by}},
               n=n, with_ties = with_ties) %>%
-    select(grps)
+    select(all_of(grps))
 
   tbl %>% right_join(keep, by=grps) 
 }
@@ -68,84 +68,165 @@ readCounts <- function(folder, sname = ""){
   counts <- readMM(file.path(folder,fn_mtx))
   rownames(counts) <- read.table(file.path(folder, fn_features), 
                                  header = FALSE,
-                                 sep = "\t",
+                                 #sep = "\t",
                                  stringsAsFactors = FALSE)$V1
   if(nchar(sname) > 0){
     colnames(counts) <- paste(sname, 
                               read.table(file.path(folder, fn_barcodes),
                                          header = FALSE,
-                                         sep = "\t",
+                                         #sep = "\t",
                                          stringsAsFactors = FALSE)$V1,
                               sep = "_")
   }else{
     colnames(counts) <- read.table(file.path(folder, fn_barcodes),
                                    header = FALSE,
-                                   sep = "\t",
+                                   #sep = "\t",
                                    stringsAsFactors = FALSE)$V1
   }
 
   return(counts)
 }
 
+reduceCountMatrix <- function(x,y){
+  allgenes <- unique(c(rownames(x), rownames(y)))
+  notInX <- allgenes[!(allgenes %in% rownames(x))]
+  notInY <- allgenes[!(allgenes %in% rownames(y))]
+
+  if(length(notInX > 0)){
+    x <- rbind(x,
+               Matrix(0, 
+                      nrow = length(notInX),
+                      ncol = ncol(x),
+                      dimnames = list(notInX, colnames(x)),
+                      sparse = TRUE))
+  }
+  if(length(notInY > 0)){
+    y <- rbind(y,
+               Matrix(0, 
+                      nrow = length(notInY),
+                      ncol = ncol(y),
+                      dimnames = list(notInY, colnames(y)),
+                      sparse = TRUE))
+  }
+
+  mm <- merge.Matrix(x, y, 
+                     by.x = rownames(x),
+                     by.y = rownames(y),
+                     all.x = TRUE,
+                     all.y = TRUE,
+                     out.class = "CsparseMatrix")
+  colnames(mm) <- c(colnames(x), colnames(y))
+  return(mm)
+}
+
+
 readMergeCounts <- function(samples){
   require(Matrix.utils)
   counts <- mapply(readCounts,
                    folder = samples$counts,
                    sname = samples$names)
-  allcounts <- Reduce(function(x,y) {
-                        allgenes <- unique(c(rownames(x), rownames(y)))
-                        notInX <- allgenes[!(allgenes %in% rownames(x))]
-                        notInY <- allgenes[!(allgenes %in% rownames(y))]
-
-                        if(length(notInX > 0)){
-                          x <- rbind(x,
-                                     Matrix(0, 
-                                            nrow = length(notInX),
-                                            ncol = ncol(x),
-                                            dimnames = list(notInX, colnames(x)),
-                                            sparse = TRUE))
-                        }
-                        if(length(notInY > 0)){
-                          y <- rbind(y,
-                                     Matrix(0, 
-                                            nrow = length(notInY),
-                                            ncol = ncol(y),
-                                            dimnames = list(notInY, colnames(y)),
-                                            sparse = TRUE))
-                        }
-
-                        mm <- merge.Matrix(x, y, 
-                                           by.x = rownames(x),
-                                           by.y = rownames(y),
-                                           all.x = TRUE,
-                                           all.y = TRUE)
-                        return(mm)},
-                        counts)
+  allcounts <- Reduce(reduceCountMatrix, counts)
   #rownames(allcounts) <- gsub("_", "-", rownames(allcounts))
 
   return(allcounts)
 }
 
+
+readMergeBiotypes <- function(samples){
+  require(Matrix.utils)
+
+  if(!any(colnames(samples) %in% c("biotypes", "allbiotypes", "contamination"))){
+    stop("samples dataframe does not contain any of: biotypes, allbiotypes, contamination")
+  }
+
+  biotypes <- list()
+  ind <- 1
+
+  if("biotypes" %in% colnames(samples)){
+    Biot <- mapply(readCounts,
+                   folder = samples$biotypes,
+                   sname = samples$name)
+    mergedBiot <- Reduce(reduceCountMatrix, Biot)
+    rownames(mergedBiot) <- paste("biot", rownames(mergedBiot), sep = "_")
+    biotypes[[ind]] <- t(mergedBiot)
+    ind <- ind + 1
+  }
+
+  if("allbiotypes" %in% colnames(samples)){
+    allBiot <- mapply(readCounts,
+                      folder = samples$allbiotypes,
+                      sname = samples$name)
+    mergedAllBiot <- Reduce(reduceCountMatrix, allBiot)
+    rownames(mergedAllBiot) <- paste("allbiot", rownames(mergedAllBiot), sep = "_")
+
+    biotypes[[ind]] <- t(mergedAllBiot)
+    ind <- ind + 1
+
+    #outmat <- t(Reduce(reduceCountMatrix, list(t(mergedBiot), t(mergedAllBiot))))
+  }
+
+  if("contamination" %in% colnames(samples)){
+    contam <- mapply(readContamination,
+                     file = samples$contamination,
+                     sname = samples$name)
+
+    allcontam <- Reduce(reduceCountMatrix, contam)
+
+    biotypes[[ind]] <- t(allcontam)
+  }
+
+  mb <- t(Reduce(reduceCountMatrix, biotypes))
+  return(mb)
+
+}
+
+
+readContamination <- function(file, sname = ""){
+  contam <- read.table(file, sep = ",", header = TRUE, stringsAsFactors = FALSE)
+  names(contam) <- paste("contam", names(contam), sep = "_")
+  contam[is.na(contam)] <- 0
+  rownames(contam) <- contam$contam_X
+  contam <- contam[,colnames(contam) != "contam_X"]
+  contam <- t(contam)
+
+  if(nchar(sname) > 0){
+    colnames(contam) <- paste(sname, colnames(contam), sep = "_")
+  }
+
+  return(Matrix(contam, sparse=TRUE))
+}
+
+readMergeContamination <- function(samples){
+  require(Matrix.utils)
+  contam <- mapply(readContamination,
+                   file = samples$contamination,
+                   sname = samples$name)
+
+  allcontam <- Reduce(reduceCountMatrix, contam)
+  
+  return(allcontam)
+}
+
 # readMergeCounts <- function(samples){
-# 		require(Matrix.utils)
-# 		counts <- mapply(readCounts,
-# 						 folder = samples$counts,
-# 						 sname = samples$names)
-# 		allcounts <- Reduce(function(x,y) {
-# 									allgenes <- unique(c(rownames(x), rownames(y)))
-# 									notInX <- allgenes[!(allgenes %in% rownames(x))]
-# 									notInY <- allgenes[!(allgenes %in% rownames(y))]
+#     require(Matrix.utils)
+#     counts <- mapply(readCounts,
+#              folder = samples$counts,
+#              sname = samples$names)
+#     allcounts <- Reduce(function(x,y) {
+#                   allgenes <- unique(c(rownames(x), rownames(y)))
+#                   notInX <- allgenes[!(allgenes %in% rownames(x))]
+#                   notInY <- allgenes[!(allgenes %in% rownames(y))]
 # 
-# 									if(length(notInX > 0)){
+#                   if(length(notInX > 0)){
 # 
-# 										
-# 									merge.Matrix(x, y, 
-# 												 by.x = rownames(x),
-# 												 by.y = rownames(y)) },
-# 							counts)
-# 		rownames(allcounts) <- gsub("_", "-", rownames(allcounts))
+#                     
+#                   merge.Matrix(x, y, 
+#                          by.x = rownames(x),
+#                          by.y = rownames(y)) },
+#               counts)
+#     rownames(allcounts) <- gsub("_", "-", rownames(allcounts))
 # 
-# 		return(allcounts)
+#     return(allcounts)
 # }
 
 readSoloRaw <- function(sname,fname, type = "raw"){
@@ -222,20 +303,20 @@ importReadsFeather <- function(samples){
 
 
 readFACS <- function(samples, barcodes = NULL){
-		if(!missing(barcodes)){
-				rownames(barcodes) <- barcodes$well
-		}
-		facs <- data.frame()
-		for(i in 1:nrow(samples)){
-				tempfacs <- read.csv(samples$facs[i], header = TRUE, stringsAsFactors = FALSE)
-				tempfacs$sample <- samples$names[i]
+    if(!missing(barcodes)){
+        rownames(barcodes) <- barcodes$well
+    }
+    facs <- data.frame()
+    for(i in 1:nrow(samples)){
+        tempfacs <- read.csv(samples$facs[i], header = TRUE, stringsAsFactors = FALSE)
+        tempfacs$sample <- samples$names[i]
 
-				if(!missing(barcodes)){
-						tempfacs$CB <- paste(samples$names[i], barcodes[tempfacs$Well,"CB"], sep = "_")
-				}
-				facs <- bind_rows(facs, tempfacs)
-		}
-		return(facs)
+        if(!missing(barcodes)){
+            tempfacs$CB <- paste(samples$names[i], barcodes[tempfacs$Well,"CB"], sep = "_")
+        }
+        facs <- bind_rows(facs, tempfacs)
+    }
+    return(facs)
 }
 
 cosine_similarity <- function(DF){
@@ -263,85 +344,85 @@ wiggleRegion <- function(reads, group = "single", site = 'cut5', reference = "cd
 }
 
 wiggleDF <- function(reads, group = 'bulk', site = 'cut5', upstream = 50 , downstream = 100){
-	# returns data frame for start/stop wiggle 
-	start <- wiggleRegion(reads, group = group, site = site, reference = "cds_start",  mindist = -upstream, maxdist = downstream, name = "start")
-	stop  <- wiggleRegion(reads, group = group, site = site, reference = "cds_end", mindist = -upstream, maxdist = downstream, name = "stop")
-	
-	## combine
-	wiggle <- bind_rows(start,stop) %>%
-			mutate(site = site) %>%
-			group_by(name, csd) %>%
-			mutate(position_total = sum(n,na.rm=TRUE)) %>%
-			ungroup()
-	
-	if (startsWith(group, 's')){
-			wiggle <- wiggle %>%
-					group_by(CB) %>%
-					mutate(cell_total = sum(n)) %>%
-					ungroup() %>%
-					mutate(CB = fct_reorder(CB, cell_total),
-						   cell_rank = dense_rank(desc(cell_total)))
-	}
-	return(wiggle)
+  # returns data frame for start/stop wiggle 
+  start <- wiggleRegion(reads, group = group, site = site, reference = "cds_start",  mindist = -upstream, maxdist = downstream, name = "start")
+  stop  <- wiggleRegion(reads, group = group, site = site, reference = "cds_end", mindist = -upstream, maxdist = downstream, name = "stop")
+  
+  ## combine
+  wiggle <- bind_rows(start,stop) %>%
+      mutate(site = site) %>%
+      group_by(name, csd) %>%
+      mutate(position_total = sum(n,na.rm=TRUE)) %>%
+      ungroup()
+  
+  if (startsWith(group, 's')){
+      wiggle <- wiggle %>%
+          group_by(CB) %>%
+          mutate(cell_total = sum(n)) %>%
+          ungroup() %>%
+          mutate(CB = fct_reorder(CB, cell_total),
+               cell_rank = dense_rank(desc(cell_total)))
+  }
+  return(wiggle)
 }
 
 
 ## length metaheatmap
 lengthMetaHeatmap <- function(reads, sites = c('cut5', 'cut3'), upstream = 60, downstream = 60, lengthRange = NULL){
-	position = 0
-	lengthmeta <- data.frame()
-	if(is.null(lengthRange)){
-			lengthRange <- c(min(reads$length),max(reads$length))
-	}
-	for(site in sites){
-			start <- reads %>%
-					mutate(csd = .data[[site]] - cds_start) %>%
-					filter(csd > -upstream,
-						   csd < downstream) %>%
-					group_by(csd, length) %>%
-					summarize(n=n()) %>%
-					ungroup() %>%
-					complete(csd = full_seq(c(-upstream,downstream),1),
-						 length = full_seq(lengthRange,1)) %>%
-					mutate(csd = replace_na(csd,0),
-	   				   length = replace_na(length,0)) %>%
-					mutate(set = paste0(site, " start codon"), 
-						   pos = position)
+  position = 0
+  lengthmeta <- data.frame()
+  if(is.null(lengthRange)){
+      lengthRange <- c(min(reads$length),max(reads$length))
+  }
+  for(site in sites){
+      start <- reads %>%
+          mutate(csd = .data[[site]] - cds_start) %>%
+          filter(csd > -upstream,
+               csd < downstream) %>%
+          group_by(csd, length) %>%
+          summarize(n=n()) %>%
+          ungroup() %>%
+          complete(csd = full_seq(c(-upstream,downstream),1),
+             length = full_seq(lengthRange,1)) %>%
+          mutate(csd = replace_na(csd,0),
+                length = replace_na(length,0)) %>%
+          mutate(set = paste0(site, " start codon"), 
+               pos = position)
 
-			position = position + 1
+      position = position + 1
 
-			stop <- reads %>%
-					mutate(csd = .data[[site]] - (cds_end)) %>%
-					filter(csd > -downstream,
-						   csd < upstream) %>%
-					group_by(csd, length) %>%
-					summarize(n=n()) %>%
-					ungroup() %>%
-					complete(csd = full_seq(c(-downstream,upstream),1),
-							 length = full_seq(lengthRange,1)) %>%
-					mutate(csd = replace_na(csd,0),
-						   length = replace_na(length,0)) %>%
-					mutate(set = paste0(site, " stop codon"), 
-						   pos = position)
-					
-			position = position + 1
-			
-			lengthmeta <- bind_rows(lengthmeta, start, stop)
-	}
+      stop <- reads %>%
+          mutate(csd = .data[[site]] - (cds_end)) %>%
+          filter(csd > -downstream,
+               csd < upstream) %>%
+          group_by(csd, length) %>%
+          summarize(n=n()) %>%
+          ungroup() %>%
+          complete(csd = full_seq(c(-downstream,upstream),1),
+               length = full_seq(lengthRange,1)) %>%
+          mutate(csd = replace_na(csd,0),
+               length = replace_na(length,0)) %>%
+          mutate(set = paste0(site, " stop codon"), 
+               pos = position)
+          
+      position = position + 1
+      
+      lengthmeta <- bind_rows(lengthmeta, start, stop)
+  }
 
-	lengthmeta <- lengthmeta %>%
-			mutate(set = fct_reorder(set,pos))
+  lengthmeta <- lengthmeta %>%
+      mutate(set = fct_reorder(set,pos))
 
-	plt_length_metaheatmap <- ggplot(lengthmeta,aes(x=csd,y=length,fill=n)) +
-			geom_tile() +
-			facet_wrap(~set, ncol=2) +
-			coord_equal() + 
-			scale_fill_gradientn(colours=rev(brewer.pal(7,"RdYlBu")),na.value=rev(brewer.pal(7,"RdYlBu"))[1])+
-			scale_y_continuous(expand=c(0,0))+
-		   	scale_x_continuous(expand=c(0,0))+
-			theme( panel.border = element_rect(colour = "black", fill=NA))
+  plt_length_metaheatmap <- ggplot(lengthmeta,aes(x=csd,y=length,fill=n)) +
+      geom_tile() +
+      facet_wrap(~set, ncol=2) +
+      coord_equal() + 
+      scale_fill_gradientn(colours=rev(brewer.pal(7,"RdYlBu")),na.value=rev(brewer.pal(7,"RdYlBu"))[1])+
+      scale_y_continuous(expand=c(0,0))+
+         scale_x_continuous(expand=c(0,0))+
+      theme( panel.border = element_rect(colour = "black", fill=NA))
 
-	return(plt_length_metaheatmap)
+  return(plt_length_metaheatmap)
 }
 
 

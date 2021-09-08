@@ -13,16 +13,16 @@ my $header;
 my $body;
 
 foreach my $f (@ARGV){
-	open my $fh, "$f" or die "Can't open gtf $f: $!\n";
-	while(<$fh>){
-		chomp;
-		if (/^#/){
-			$header .= "$_\n";
-		}else{
-			$body .= "$_\n";
-		}
-	}
-	close $fh;
+  open my $fh, "$f" or die "Can't open gtf $f: $!\n";
+  while(<$fh>){
+    chomp;
+    if (/^#/){
+      $header .= "$_\n";
+    }else{
+      $body .= "$_\n";
+    }
+  }
+  close $fh;
 }
 
 print STDOUT "$header";

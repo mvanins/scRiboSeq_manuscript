@@ -60,7 +60,7 @@ print(countPrefix)
 if(grepl("feather",args$annotations)){
   annot <- read_feather(args$annotations)
 }else{
-  annot <- fread(args$annotations)
+  annot <- fread(args$annotations, stringsAsFactors = FALSE, data.table = FALSE)
 }
 
 # reads
@@ -124,11 +124,11 @@ expanded_pc <- expanded_pc %>%
          l_cds = l_cds + 2*args$expansion,
          l_utr3 = l_utr3 - args$expansion ) %>%
   mutate(l_utr5 = case_when( l_utr5 < 0 ~ 0,
-                            l_utr5 >= 0 ~ l_utr5),
+                            l_utr5 >= 0 ~ as.numeric(l_utr5)),
          l_cds = case_when(l_cds < 0 ~ 0,
-                           l_cds >= 0 ~ l_cds),
+                           l_cds >= 0 ~ as.numeric(l_cds)),
          l_utr3 = case_when(l_utr3 < 0 ~ 0,
-                            l_utr3 >= 0 ~ l_utr3))
+                            l_utr3 >= 0 ~ as.numeric(l_utr3)))
 
 if(!args$rna){
   coding_counts <- expanded_pc %>%
@@ -155,7 +155,7 @@ coding_counts <- coding_counts %>%
   group_by(CB, .data[[countGroup]]) %>%
   summarize(n=n()) %>%
   ungroup() %>%
-  rename(count_group = countGroup) 
+  rename(count_group = all_of(countGroup))
 
 if(!args$rna){
   cds_fraction <- expanded_pc %>%
@@ -167,18 +167,21 @@ if(!args$rna){
     group_by(CB, .data[[countGroup]], id) %>%
     distinct(id, .keep_all = TRUE) %>%
     ungroup() %>%
-    mutate( region = case_when(cut5 < (l_utr5) ~ "utr5",
-                               ((cut5  >= (l_utr5)) & (cut5 < ((l_utr5)+l_cds ) )) ~ "cds", 
-                               (cut5 >= (l_utr5 + l_cds)) ~ "utr3" )) %>%
+    mutate( region = case_when(.data[[args$site]] < (l_utr5) ~ "utr5",
+                               ((.data[[args$site]]  >= (l_utr5)) & (.data[[args$site]] < ((l_utr5)+l_cds ) )) ~ "cds", 
+                               (.data[[args$site]] >= (l_utr5 + l_cds)) ~ "utr3" )) %>%
     group_by(CB,region) %>%
     summarize(n_region = n()) %>%
+    mutate(region = factor(region, levels = c('utr5', 'cds', 'utr3')))  %>%
+    complete(region, CB, fill = list(n_region = 0)) %>%
     ungroup() %>%
-    spread(region, n_region) %>%
-    group_by(CB) %>%
-    mutate(cds_frac = cds/(sum(cds, utr3, utr5, na.rm=TRUE)),
-           cell_total = sum(cds, utr3, utr5, na.rm=TRUE)) %>%
-    ungroup() %>%
-    pivot_longer(c(cds, utr3, utr5, cds_frac, cell_total), names_to = "count_group", values_to = "n")
+    pivot_wider(names_from = "region", values_from = "n_region") %>%
+    mutate(cds = replace_na(cds, 0),
+           utr3 = replace_na(utr3, 0),
+           utr5 = replace_na(utr5, 0)) %>%
+    mutate(cds_frac = cds/(cds + utr3 + utr5),
+           cell_total = (cds + utr3 + utr5)) %>%
+    pivot_longer(cols = c(cds, utr3, utr5, cds_frac, cell_total), names_to = "count_group", values_to = "n")
 
   coding_counts <- bind_rows(coding_counts,
                              cds_fraction)

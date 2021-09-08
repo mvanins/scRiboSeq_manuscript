@@ -1,0 +1,49 @@
+# Michael VanInsberghe
+# conda environment for (sc)RPF pipeline
+
+name: scRPF
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - conda-forge::python=3.8.2
+  - conda-forge::numpy=1.20.0
+  - conda-forge::pandas=1.2.2
+  - conda-forge::feather-format=0.4.1
+  - conda-forge::perl=5.26.2
+  - conda-forge::pigz
+
+  ## R:
+  - conda-forge::r-base=3.6.3
+  - conda-forge::r-dplyr=1.0.4
+  - conda-forge::r-tidyr=1.1.2
+  - conda-forge::r-ggplot2
+  - conda-forge::r-cowplot
+  - conda-forge::r-data.table
+  - conda-forge::r-optparse
+  - conda-forge::r-rcolorbrewer
+  - conda-forge::r-feather=0.3.5
+  - conda-forge::r-ggseqlogo
+  - conda-forge::r-forcats
+  - conda-forge::r-r.utils
+  - conda-forge::r-matrix
+  - conda-forge::r-matrix.utils
+  - conda-forge::r-ranger=0.12.1
+
+
+  ## bioconda
+  - bioconda::perl-getopt-long
+  - bioconda::fastqc
+  - bioconda::samtools
+  - bioconda::bedtools
+  - bioconda::multiqc
+  - bioconda::sambamba
+  - bioconda::pysam
+  - bioconda::cutadapt
+  - bioconda::umi_tools
+  - bioconda::gffutils
+  - bioconda::trnascan-se=2.0.7
+  - bioconda::star=2.7.6a 
+  - bioconda::bwa
+
